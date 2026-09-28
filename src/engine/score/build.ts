@@ -199,7 +199,7 @@ export function buildMeasures(layout: DocumentLayout): BuildResult {
     const c = rec.sy.clefs.filter((c) => c.staff === staff && c.x < x).sort((a, b) => b.x - a.x)[0];
     return c?.clef ?? fallback;
   };
-  let clefCarry: [ClefType, ClefType] = ["G", "F"];
+  const clefCarry: [ClefType, ClefType] = ["G", "F"];
   for (const rec of systems) {
     for (const info of infosBySystem.get(rec) ?? []) {
       const clef = clefFor(rec, info.head.staff, info.head.x, clefCarry[info.head.staff]);

@@ -67,6 +67,7 @@ export type GlyphKind =
   | "ornament"
   | "articulation"
   | "pedal"
+  | "ottava"
   | "ignore";
 
 export interface GlyphMeaning {
@@ -205,6 +206,17 @@ const SMUFL: Record<number, GlyphMeaning> = {
   0xe4c0: m("fermata", "above"),
   0xe4c1: m("fermata", "below"),
   0xe000: m("brace"),
+  0xe510: m("ottava", "8va"),
+  0xe511: m("ottava", "8vb"),
+  0xe512: m("ottava", "8vb"),
+  0xe513: m("ottava", "8vb"),
+  0xe514: m("ottava", "15ma"),
+  0xe515: m("ottava", "15mb"),
+  0xe516: m("ottava", "15mb"),
+  0xe517: m("ottava", "22ma"),
+  0xe518: m("ottava", "22mb"),
+  0xe51c: m("ottava", "8va"),
+  0xe51d: m("ottava", "8vb"),
   0xe043: m("repeatDots"),
   0xe044: m("repeatDots"),
   0xe26a: m("paren", "left"),
@@ -220,6 +232,21 @@ const SMUFL: Record<number, GlyphMeaning> = {
   0xe522: m("dynamic", "f"),
   0xe524: m("dynamic", "s"),
   0xe525: m("dynamic", "z"),
+  0xe523: m("dynamic", "r"),
+  0xe526: m("dynamic", "n"),
+  0xe52a: m("dynamic", "ppp"),
+  0xe52b: m("dynamic", "pp"),
+  0xe52c: m("dynamic", "mp"),
+  0xe52d: m("dynamic", "mf"),
+  0xe52e: m("dynamic", "pf"),
+  0xe52f: m("dynamic", "ff"),
+  0xe530: m("dynamic", "fff"),
+  0xe534: m("dynamic", "fp"),
+  0xe536: m("dynamic", "sfz"),
+  0xe538: m("dynamic", "sf"),
+  0xe539: m("dynamic", "sfp"),
+  0xe53c: m("dynamic", "rfz"),
+  0xe53d: m("dynamic", "fz"),
   0xe650: m("pedal", "down"),
   0xe655: m("pedal", "up"),
   0xe1d5: m("metronomeNote", "quarter"),

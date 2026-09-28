@@ -1,36 +1,33 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Legato
 
-## Getting Started
+Drop a born-digital piano PDF, get a MIDI for Synthesia with the right and left hands on separate tracks. If any measure cannot be reconstructed with certainty, Legato refuses and says where.
 
-First, run the development server:
+- **Engine:** own vector parser (`src/engine`) on top of mupdf.js. It reads music-font glyphs and vector paths, solves rhythm per measure, validates everything, resolves repeats and D.S./D.C./Coda, assigns hands and writes an SMF (PPQ 960, tracks `Right Hand` / `Left Hand`).
+- **App:** Next.js 16 on Vercel. `POST /api/convert` streams the five stages as NDJSON; the page shows a Synthesia-style preview with piano playback.
+- **Database:** Neon Postgres stores conversion metadata, diagnostics and the generated MIDI (never the PDF). History is per browser.
+
+Research and the architecture decision: [`docs/research/pdf-to-midi-research.md`](docs/research/pdf-to-midi-research.md).
+
+## Run
 
 ```bash
+npm install
+cp .env.example .env.local   # set DATABASE_URL (optional; without it there is no history)
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Command line
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npx tsx scripts/convert.ts path/to/score.pdf      # writes fixtures/out/<name>.mid
+npx tsx scripts/debug-measures.ts path/to/score.pdf
+npx tsx bench/run.ts 20 "Leland,Bravura"            # benchmark, needs MuseScore (mscore) on PATH
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Debug overlays (`scripts/debug-symbols.ts`, `scripts/debug-pitches.ts`) draw what the engine read on top of a rendered page.
 
-## Learn More
+## Supported
 
-To learn more about Next.js, take a look at the following resources:
+Grand-staff piano scores exported from Sibelius, MuseScore, Finale, Dorico or Musicnotes: chords, several voices, accidentals, key and time changes, clef changes, ties, triplets and other simple tuplets, grace notes, repeats, 1st/2nd endings, Segno/Coda/D.S./D.C./Fine, tempo marks, rit./a tempo, dynamics, hand markings.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Not yet: scanned PDFs (by design), nested tuplets, tremolos, 8va lines, multi-measure rests, non-piano ensembles. These are rejected with a reason rather than converted wrongly.

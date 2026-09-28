@@ -27,7 +27,7 @@ export interface MeasureDiagnostic {
 }
 
 export interface ConversionError {
-  code: "not-pdf" | "scanned" | "no-music" | "unsupported-font" | "not-piano" | "unreliable" | "navigation" | "internal";
+  code: "not-pdf" | "scanned" | "no-music" | "unsupported-font" | "not-piano" | "unreliable" | "navigation" | "ottava" | "internal";
   message: string;
   details: string[];
   measures?: MeasureDiagnostic[];
@@ -48,6 +48,7 @@ export interface ConversionStats {
   tempoEstimated: boolean;
   timeSignature: string;
   keySignature: string;
+  keyFifths: number;
   ties: number;
   graceNotes: number;
   tuplets: number;
@@ -87,7 +88,7 @@ export interface ConversionResult {
   navigation: string[];
   handNotes: string[];
   warnings: string[];
-  preview?: { notes: PreviewNote[]; duration: number; measureStarts: number[] };
+  preview?: { notes: PreviewNote[]; duration: number; measureStarts: number[]; measureNumbers: number[] };
   midi?: Uint8Array;
   timingsMs: Record<StageId, number>;
   timeline?: Timeline;
@@ -192,7 +193,25 @@ export async function convertPdf(data: Uint8Array, opts: ConvertOptions = {}): P
   const unknownInStaff = layout.issues.unknownGlyphs.filter((g) =>
     layout.pages.some((p) => p.systems.some((s) => g.x > s.x0 && g.x < s.x1 && g.y > s.upper.top - 3 * s.upper.sp && g.y < s.lower.bottom + 3 * s.upper.sp)),
   );
+  // Octave lines (8va, 8vb, 15ma…) shift pitches over a span we do not read yet: refuse instead of playing them wrong.
+  const ottavas: string[] = [];
+  for (const p of layout.pages) {
+    const inSystem = (y: number) => p.systems.some((s) => y > s.upper.top - 10 * s.upper.sp && y < s.lower.bottom + 10 * s.upper.sp);
+    for (const g of p.glyphs) if (g.kind === "ottava" && inSystem(g.y)) ottavas.push(`${g.value} on page ${p.page + 1}`);
+    for (const w of phrases(p.words)) if (/^(8\s?va|8\s?vb|8\s?ba|8va bassa|15\s?ma|15\s?mb|ottava)\b/i.test(w.text.trim()) && inSystem(w.y)) ottavas.push(`"${w.text.trim()}" on page ${p.page + 1}`);
+  }
   const nav = unroll(built.measures, directions);
+  if (ottavas.length) {
+    lap("validate");
+    const r = fail("ottava", "This score uses octave lines (8va / 8vb), which are not supported yet.", [
+      `Found: ${ottavas.slice(0, 5).join(", ")}`,
+      "Notes under an octave line sound an octave away from where they are written; converting them without reading the line would give wrong pitches.",
+    ]);
+    r.title = title;
+    r.composer = composer;
+    r.timingsMs = timings;
+    return r;
+  }
   const warnings: string[] = [];
   for (const m of built.measures) for (const w of new Set(m.warnings)) if (!/voice collision/.test(w)) warnings.push(`Measure ${m.index + 1}: ${w}`);
   const measureDiag = failed.map((m) => ({ measure: m.index + 1, page: m.page + 1, problems: [...new Set(m.problems)] }));
@@ -258,6 +277,7 @@ export async function convertPdf(data: Uint8Array, opts: ConvertOptions = {}): P
       tempoEstimated: tl.tempoEstimated,
       timeSignature: `${first.time.num}/${first.time.den}`,
       keySignature: KEY_NAMES[first.keyFifths[0]] ?? "",
+      keyFifths: first.keyFifths[0],
       ties: allNotes.filter((n) => n.tieNext).length,
       graceNotes: allNotes.filter((n) => n.grace).length,
       tuplets: 0,
@@ -270,7 +290,12 @@ export async function convertPdf(data: Uint8Array, opts: ConvertOptions = {}): P
     navigation: nav.notes,
     handNotes: hands.notes.concat(unsupportedFonts.length ? [`Unsupported fonts ignored: ${unsupportedFonts.join(", ")}`] : []),
     warnings,
-    preview: { notes: previewNotes, duration, measureStarts: tl.measureTicks.map((m) => +secs(m.tick).toFixed(3)) },
+    preview: {
+      notes: previewNotes,
+      duration,
+      measureStarts: tl.measureTicks.map((m) => +secs(m.tick).toFixed(3)),
+      measureNumbers: tl.measureTicks.map((m) => m.measure + 1),
+    },
     midi,
     timingsMs: timings,
     timeline: opts.includeTimeline ? tl : undefined,
