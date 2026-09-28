@@ -1,0 +1,12 @@
+import fs from "node:fs";
+import { extractDocument } from "../src/engine/pdf/extract";
+import { analyzeLayout } from "../src/engine/layout/document";
+import { buildMeasures } from "../src/engine/score/build";
+const file = process.argv[2];
+const verbose = process.argv.includes("-v");
+const L = analyzeLayout(extractDocument(new Uint8Array(fs.readFileSync(file))));
+const r = buildMeasures(L);
+const bad = r.measures.filter(m => !m.ok);
+console.log(`${file}: measures=${r.measures.length} ok=${r.measures.length - bad.length} notes=${r.notes.length} ties=${r.notes.filter(n=>n.tieNext).length}`);
+for (const m of bad) console.log(`  m${m.index + 1} p${m.page + 1}s${m.system}: ${[...new Set(m.problems)].join("; ")}`);
+if (verbose) for (const m of r.measures.filter(m => m.warnings.length)) console.log(`  warn m${m.index + 1}: ${[...new Set(m.warnings)].join("; ")}`);

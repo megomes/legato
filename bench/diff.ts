@@ -1,0 +1,13 @@
+import fs from "node:fs";
+import { convertPdf } from "../src/engine/convert";
+import { PPQ } from "../src/engine/util/frac";
+import { generateCase } from "./generate";
+const [seed, font] = [Number(process.argv[2]), process.argv[3] ?? "Leland"];
+const c = generateCase(seed, `Bench ${seed}`);
+const r = await convertPdf(new Uint8Array(fs.readFileSync(`bench/tmp/case-${seed}-${font.replace(/\s/g, "")}.pdf`)), { includeTimeline: true });
+const q = (t: number) => (t / PPQ).toFixed(3);
+const truth = c.notes.map(n => `${n.staff ? "L" : "R"} ${n.midi} ${n.start.toFixed(3)}-${n.end.toFixed(3)}`);
+const got = r.timeline!.notes.map(n => `${n.hand} ${n.midi} ${q(n.start)}-${q(n.end)}`);
+const g = new Set(got), t = new Set(truth);
+console.log("missing (truth not produced):", truth.filter(x => !g.has(x)));
+console.log("extra (produced not in truth):", got.filter(x => !t.has(x)));
