@@ -59,8 +59,8 @@ function keyboard(lo: number, hi: number, width: number): { keys: KeyGeo[]; byMi
 }
 
 const COLORS = {
-  R: { top: "#8ff0c4", bottom: "#2fbf83", glow: "rgba(94,230,168,0.55)", key: "#5ee6a8" },
-  L: { top: "#a9bdff", bottom: "#5476ee", glow: "rgba(124,156,255,0.55)", key: "#7c9cff" },
+  R: { top: "#8ff0c4", bottom: "#2fbf83", deep: "#1b8a5c", glow: "rgba(94,230,168,0.55)", key: "#5ee6a8" },
+  L: { top: "#a9bdff", bottom: "#5476ee", deep: "#3450c4", glow: "rgba(124,156,255,0.55)", key: "#7c9cff" },
 };
 
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
@@ -162,6 +162,9 @@ export function Waterfall({ notes, duration, measureStarts, measureNumbers, getT
       }
       i = lo;
       const mutedNow = state.current.muted;
+      // Collect what is on screen, then paint white-key notes first and black-key notes on top (as Synthesia
+      // does): a black-key lane overlaps its white neighbours, so painting by start time could hide notes.
+      const visible: { n: PreviewNote; k: KeyGeo; top: number; bottom: number; sounding: boolean }[] = [];
       for (; i < sorted.length; i++) {
         const n = sorted[i];
         if (n.t > t + windowSecs) break;
@@ -169,34 +172,38 @@ export function Waterfall({ notes, duration, measureStarts, measureNumbers, getT
         if (end < t) continue;
         const k = geo.byMidi.get(n.m);
         if (!k) continue;
-        const hand = n.h === 0 ? "R" : "L";
-        const col = COLORS[hand];
-        const yBottom = fallH - (n.t - t) * pps;
-        const yTop = fallH - (end - t) * pps;
-        const pad = k.black ? 1 : Math.max(1.5, k.w * 0.1);
-        const x = k.x + pad;
-        const nw = k.w - pad * 2;
-        const top = Math.max(-4, yTop);
-        const bottom = Math.min(fallH, yBottom);
+        const top = Math.max(-4, fallH - (end - t) * pps);
+        const bottom = Math.min(fallH, fallH - (n.t - t) * pps);
         if (bottom - top < 1) continue;
         const sounding = n.t <= t && end > t;
-        if (sounding) active.set(n.m, hand);
-        const dim = mutedNow[hand];
-        ctx.globalAlpha = dim ? 0.18 : 1;
-        const grad = ctx.createLinearGradient(0, top, 0, bottom);
-        grad.addColorStop(0, col.top);
-        grad.addColorStop(1, col.bottom);
-        ctx.shadowColor = sounding && !dim ? col.glow : "transparent";
-        ctx.shadowBlur = sounding && !dim ? 18 : 0;
-        ctx.fillStyle = grad;
-        roundRect(ctx, x, top, nw, bottom - top, Math.min(6, nw / 2.5));
-        ctx.fill();
-        ctx.shadowBlur = 0;
-        ctx.strokeStyle = "rgba(11,12,20,0.35)";
-        ctx.lineWidth = 1;
-        ctx.stroke();
-        ctx.globalAlpha = 1;
+        if (sounding) active.set(n.m, n.h === 0 ? "R" : "L");
+        visible.push({ n, k, top, bottom, sounding });
       }
+      for (const layer of [false, true])
+        for (const { n, k, top, bottom, sounding } of visible) {
+          if (k.black !== layer) continue;
+          const hand = n.h === 0 ? "R" : "L";
+          const col = COLORS[hand];
+          const pad = k.black ? 1 : Math.max(1.5, k.w * 0.1);
+          const x = k.x + pad;
+          const nw = k.w - pad * 2;
+          const dim = mutedNow[hand];
+          ctx.globalAlpha = dim ? 0.18 : 1;
+          const grad = ctx.createLinearGradient(0, top, 0, bottom);
+          grad.addColorStop(0, k.black ? col.bottom : col.top);
+          grad.addColorStop(1, k.black ? col.deep : col.bottom);
+          ctx.shadowColor = sounding && !dim ? col.glow : "transparent";
+          ctx.shadowBlur = sounding && !dim ? 18 : 0;
+          ctx.fillStyle = grad;
+          roundRect(ctx, x, top, nw, bottom - top, Math.min(6, nw / 2.5));
+          ctx.fill();
+          ctx.shadowBlur = 0;
+          // a dark outline keeps notes readable where a black-key note crosses a white-key one
+          ctx.strokeStyle = k.black ? "rgba(11,12,20,0.9)" : "rgba(11,12,20,0.4)";
+          ctx.lineWidth = k.black ? 1.5 : 1;
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+        }
 
       // hit line
       const hit = ctx.createLinearGradient(0, 0, W, 0);
