@@ -51,6 +51,7 @@ export interface ConversionStats {
   keyFifths: number;
   ties: number;
   graceNotes: number;
+  ottavaNotes: number;
   tuplets: number;
   font: string;
   producer: string;
@@ -193,42 +194,28 @@ export async function convertPdf(data: Uint8Array, opts: ConvertOptions = {}): P
   const unknownInStaff = layout.issues.unknownGlyphs.filter((g) =>
     layout.pages.some((p) => p.systems.some((s) => g.x > s.x0 && g.x < s.x1 && g.y > s.upper.top - 3 * s.upper.sp && g.y < s.lower.bottom + 3 * s.upper.sp)),
   );
-  // Octave lines (8va, 8vb, 15ma…) shift pitches over a span we do not read yet: refuse instead of playing them wrong.
-  const ottavas: string[] = [];
-  for (const p of layout.pages) {
-    const inSystem = (y: number) => p.systems.some((s) => y > s.upper.top - 10 * s.upper.sp && y < s.lower.bottom + 10 * s.upper.sp);
-    for (const g of p.glyphs) if (g.kind === "ottava" && inSystem(g.y)) ottavas.push(`${g.value} on page ${p.page + 1}`);
-    for (const w of phrases(p.words)) if (/^(8\s?va|8\s?vb|8\s?ba|8va bassa|15\s?ma|15\s?mb|ottava)\b/i.test(w.text.trim()) && inSystem(w.y)) ottavas.push(`"${w.text.trim()}" on page ${p.page + 1}`);
-  }
   const nav = unroll(built.measures, directions);
-  if (ottavas.length) {
-    lap("validate");
-    const r = fail("ottava", "This score uses octave lines (8va / 8vb), which are not supported yet.", [
-      `Found: ${ottavas.slice(0, 5).join(", ")}`,
-      "Notes under an octave line sound an octave away from where they are written; converting them without reading the line would give wrong pitches.",
-    ]);
-    r.title = title;
-    r.composer = composer;
-    r.timingsMs = timings;
-    return r;
-  }
   const warnings: string[] = [];
   for (const m of built.measures) for (const w of new Set(m.warnings)) if (!/voice collision/.test(w)) warnings.push(`Measure ${m.index + 1}: ${w}`);
   const measureDiag = failed.map((m) => ({ measure: m.index + 1, page: m.page + 1, problems: [...new Set(m.problems)] }));
   lap("validate");
-  if (unknownInStaff.length || failed.length || nav.problems.length) {
+  const docProblems = built.documentProblems;
+  if (unknownInStaff.length || failed.length || nav.problems.length || docProblems.length) {
     const details: string[] = [];
     if (unknownInStaff.length) details.push(`${unknownInStaff.length} unrecognised symbol(s) inside the staves (font ${unknownInStaff[0].font}, code U+${unknownInStaff[0].code.toString(16).toUpperCase()}).`);
     for (const d of measureDiag.slice(0, 12)) details.push(`Measure ${d.measure} (page ${d.page}): ${d.problems.join("; ")}`);
     if (measureDiag.length > 12) details.push(`…and ${measureDiag.length - 12} more measure(s).`);
-    details.push(...nav.problems);
+    details.push(...nav.problems, ...docProblems);
     const first = measureDiag[0];
-    const message = nav.problems.length && !failed.length
+    const ottavaIssue = docProblems.some((p) => /octave/i.test(p)) && !failed.length;
+    const message = ottavaIssue
+      ? "An octave line (8va / 8vb) in this score could not be followed reliably."
+      : nav.problems.length && !failed.length
       ? "The repeat/jump structure of this score could not be resolved reliably."
       : first
         ? `Measure ${first.measure} contains notation that could not be reconstructed reliably.`
         : "This score contains symbols that could not be recognised.";
-    const r = fail(nav.problems.length && !failed.length ? "navigation" : "unreliable", message, details);
+    const r = fail(ottavaIssue ? "ottava" : nav.problems.length && !failed.length ? "navigation" : "unreliable", message, details);
     r.title = title;
     r.composer = composer;
     r.error!.measures = measureDiag;
@@ -280,6 +267,7 @@ export async function convertPdf(data: Uint8Array, opts: ConvertOptions = {}): P
       keyFifths: first.keyFifths[0],
       ties: allNotes.filter((n) => n.tieNext).length,
       graceNotes: allNotes.filter((n) => n.grace).length,
+      ottavaNotes: built.ottavaNotes,
       tuplets: 0,
       font: musicFonts.find((p) => p.role === "music")?.name ?? "",
       producer: [raw.creator, raw.producer].filter(Boolean).join(" · "),

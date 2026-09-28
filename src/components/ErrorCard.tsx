@@ -31,8 +31,8 @@ const COPY: Record<string, { title: string; body: string; icon: IconName }> = {
     icon: "refresh",
   },
   ottava: {
-    title: "Esta partitura usa linhas de oitava (8va / 8vb).",
-    body: "As notas sob essas linhas soam uma oitava acima ou abaixo do que está escrito. O Legato ainda não lê essas linhas, então recusa em vez de tocar as notas na oitava errada.",
+    title: "Uma linha de oitava (8va / 8vb) não pôde ser seguida com segurança.",
+    body: "As notas sob essas linhas soam uma oitava acima ou abaixo do que está escrito. Não consegui saber exatamente onde a linha começa ou termina, então recusei em vez de arriscar a oitava errada.",
     icon: "music",
   },
   internal: { title: "Algo deu errado ao ler este PDF.", body: "O conversor encontrou um erro interno. Os detalhes abaixo ajudam a investigar.", icon: "alert" },

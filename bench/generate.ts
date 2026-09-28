@@ -196,6 +196,32 @@ export function generateCase(seed: number, name: string): Case {
       }
   }
 
+  // ---- octave lines: sounding pitches move up (8va/15ma, right hand) or down (8vb, left hand) ----------
+  const ottava = rng.chance(0.4)
+    ? (() => {
+        const staff = rng.chance(0.65) ? 0 : 1;
+        const size = staff === 0 && rng.chance(0.25) ? 15 : 8;
+        const a = rng.int(1, Math.max(1, nMeasures - 4));
+        const b = Math.min(nMeasures - 2, a + rng.int(0, 3));
+        return { staff: staff as 0 | 1, size, a, b, steps: (staff === 0 ? 1 : -1) * (size === 15 ? 14 : 7) };
+      })()
+    : null;
+  if (ottava) {
+    features.add(ottava.staff === 0 ? (ottava.size === 15 ? "15ma" : "8va") : "8vb");
+    for (let m = ottava.a; m <= ottava.b; m++)
+      for (const evs of music[m][ottava.staff]) for (const e of evs) e.pitches = e.pitches.map((p) => ({ step: p.step + ottava.steps, alter: p.alter }));
+    // ties may not cross the edges of the octave line
+    for (const mi of [ottava.a - 1, ottava.b]) {
+      const vs = music[mi]?.[ottava.staff];
+      if (!vs) continue;
+      for (const v of vs) {
+        const last = v[v.length - 1];
+        if (last) last.tieStart = false;
+      }
+      for (const v of music[mi + 1]?.[ottava.staff] ?? []) if (v[0]) v[0].tieStop = false;
+    }
+  }
+
   // ---- ground truth in playing order -----------------------------------------------------------
   const order: number[] = [];
   for (let m = 0; m < nMeasures; m++) {
@@ -254,6 +280,8 @@ export function generateCase(seed: number, name: string): Case {
       x.push(`<clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>F</sign><line>4</line></clef></attributes>`);
       x.push(`<direction placement="above"><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>${tempo}</per-minute></metronome></direction-type><sound tempo="${tempo}"/></direction>`);
     }
+    if (ottava && m === ottava.a)
+      x.push(`<direction placement="${ottava.staff === 0 ? "above" : "below"}"><direction-type><octave-shift type="${ottava.staff === 0 ? "down" : "up"}" size="${ottava.size}" number="1"/></direction-type><staff>${ottava.staff + 1}</staff></direction>`);
     if (clefChange && m === Math.floor(nMeasures / 2)) x.push(`<attributes><clef number="2"><sign>G</sign><line>2</line></clef></attributes>`);
     if (clefChange && m === Math.floor(nMeasures / 2) + 2) x.push(`<attributes><clef number="2"><sign>F</sign><line>4</line></clef></attributes>`);
     let first = true;
@@ -281,6 +309,7 @@ export function generateCase(seed: number, name: string): Case {
           });
         }
       });
+    if (ottava && m === ottava.b) x.push(`<direction><direction-type><octave-shift type="stop" size="${ottava.size}" number="1"/></direction-type><staff>${ottava.staff + 1}</staff></direction>`);
     if (useVolta && m === repeatEnd) x.push(`<barline location="right"><bar-style>light-heavy</bar-style><ending number="1" type="stop"/><repeat direction="backward"/></barline>`);
     else if (useRepeat && m === repeatEnd) x.push(`<barline location="right"><bar-style>light-heavy</bar-style><repeat direction="backward"/></barline>`);
     if (useVolta && m === repeatEnd + 1) x.push(`<barline location="right"><ending number="2" type="discontinue"/></barline>`);

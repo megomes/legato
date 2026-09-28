@@ -1,6 +1,7 @@
 import type { DocumentLayout } from "../layout/document";
 import type { GrandSystem, PageLayout } from "../layout/types";
 import { solveMeasure, type TimedEvent } from "../recognize/rhythm";
+import { readOttavas } from "../recognize/ottava";
 import { readSystemSymbols } from "../recognize/symbols";
 import { applyTuplets } from "../recognize/tuplets";
 import type { Chord, ClefType, Frac, Head, Rest, StaffIndex, SystemSymbols, TupletMark } from "../recognize/types";
@@ -38,6 +39,8 @@ export interface BuildResult {
   /** global start of each measure in quarter notes */
   measureStart: Frac[];
   documentProblems: string[];
+  /** notes transposed by 8va/8vb/15ma lines */
+  ottavaNotes: number;
 }
 
 interface HeadInfo {
@@ -326,6 +329,12 @@ export function buildMeasures(layout: DocumentLayout): BuildResult {
     }
   }
 
+  // ---- octave lines ----------------------------------------------------------------------------
+  const ottavas = readOttavas(layout.pages);
+  documentProblems.push(...ottavas.problems);
+  const shifted = (n: NoteEvent, rec: SystemRecord) =>
+    ottavas.spans.find((o) => o.sys === rec.sys && o.staff === n.staff && n.x >= o.x0 && n.x <= o.x1);
+
   // ---- grace notes ------------------------------------------------------------------------------
   for (const { chord, measure, system } of graceInfos) {
     const rec = system;
@@ -368,8 +377,21 @@ export function buildMeasures(layout: DocumentLayout): BuildResult {
     }
   }
 
+  // Octave lines change what sounds, not what is written: apply them last, to every note under the line.
+  let ottavaNotes = 0;
+  for (const m of measures) {
+    const rec = systems[m.system];
+    for (const n of m.notes) {
+      const o = shifted(n, rec);
+      if (!o) continue;
+      n.midi += 12 * o.octaves;
+      n.step += 7 * o.octaves;
+      ottavaNotes++;
+    }
+  }
+
   if (!measures.length) documentProblems.push("No grand-staff piano systems were found.");
-  return { measures, systems, notes, measureStart, documentProblems };
+  return { measures, systems, notes, measureStart, documentProblems, ottavaNotes };
 }
 
 function durationOf(c: Chord | Rest): Frac {

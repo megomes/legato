@@ -36,25 +36,31 @@ export function applyTuplets(sy: SystemSymbols): TupletMark[] {
         members = members.filter((e) => !("heads" in e) || e.dir === want);
       }
     } else {
-      // nearest beam passing under/over the number
+      // Beams near the number, nearest first. The number sits outside its beam, away from the noteheads:
+      // below the beam of a down-stem group, above the beam of an up-stem group.
+      const beamYAt = (b: (typeof sy.beams)[number], x: number) => b.ya + ((b.yb - b.ya) * (x - b.xa)) / (b.xb - b.xa || 1);
       const beams = sy.beams
         .filter((b) => t.x >= b.xa - 0.5 * sp && t.x <= b.xb + 0.5 * sp)
-        .map((b) => ({ b, d: Math.abs(b.ya + ((b.yb - b.ya) * (t.x - b.xa)) / (b.xb - b.xa || 1) - (t.y - 0.3 * sp)) }))
+        .map((b) => ({ b, d: Math.abs(beamYAt(b, t.x) - (t.y - 0.3 * sp)) }))
         .filter((c) => c.d < 3 * sp)
         .sort((p, q) => p.d - q.d);
-      const beam = beams[0]?.b;
-      if (beam && ratio) {
+      // Compare candidate groups under every nearby beam: a tuplet usually has exactly n notes of equal value.
+      let best: { run: Chord[]; score: number } | null = null;
+      for (const { b: beam, d } of beams.slice(0, 4)) {
+        if (!ratio) break;
         const group = sy.chords
           .filter((c) => {
             if (!c.stem) return false;
             const tip = c.dir === "up" ? c.stem.y0 : c.stem.y1;
-            const by = beam.ya + ((beam.yb - beam.ya) * (c.stem.x - beam.xa)) / (beam.xb - beam.xa || 1);
-            return c.stem.x >= beam.xa - 0.5 && c.stem.x <= beam.xb + 0.5 && Math.abs(tip - by) < 0.8 * sp;
+            return c.stem.x >= beam.xa - 0.5 && c.stem.x <= beam.xb + 0.5 && Math.abs(tip - beamYAt(beam, c.stem.x)) < 0.8 * sp;
           })
           .sort((a, b) => a.anchor - b.anchor);
+        if (!group.length) continue;
+        const up = group.filter((c) => c.dir === "up").length >= group.length / 2;
+        const numberMid = t.y - 0.3 * sp;
+        if (up ? numberMid > beamYAt(beam, t.x) + 0.3 * sp : numberMid < beamYAt(beam, t.x) - 0.3 * sp) continue;
         // A beam group may hold more than the tuplet (e.g. a sixteenth triplet beamed with eighths):
-        // pick the contiguous run centred under the number whose scaled total is a normal note value.
-        let best: { run: Chord[]; score: number } | null = null;
+        // consider every contiguous run centred under the number whose scaled total is a normal note value.
         for (let i = 0; i < group.length; i++)
           for (let j = i; j < group.length; j++) {
             const run = group.slice(i, j + 1);
@@ -65,11 +71,12 @@ export function applyTuplets(sy: SystemSymbols): TupletMark[] {
             if (centre > 1.5 * sp) continue;
             const total = run.reduce((s, e) => add(s, e.base), frac(0));
             if (!isSimple(mul(total, frac(ratio[0], ratio[1])))) continue;
-            const score = centre + (run.length === t.n ? 0 : 0.5 * sp) + (run.length < 2 ? sp : 0);
+            const equal = run.every((e) => e.base.n * run[0].base.d === run[0].base.n * e.base.d);
+            const score = centre + (run.length === t.n ? 0 : 1.5 * sp) + (equal ? 0 : 0.5 * sp) + (run.length < 2 ? sp : 0) + 0.3 * d;
             if (!best || score < best.score) best = { run, score };
           }
-        members = best?.run ?? group;
       }
+      if (best) members = best.run;
     }
     if (!ratio || !members.length) {
       // Probably a measure number or fingering. Ignoring a real tuplet would make its measure too long, which the

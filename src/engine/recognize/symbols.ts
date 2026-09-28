@@ -294,8 +294,17 @@ export function readSystemSymbols(page: PageLayout, sys: GrandSystem): SystemSym
     else clusters.push([h]);
   }
   for (const cl of clusters) {
-    const minX = Math.min(...cl.map((h) => h.x));
-    const w = cl[0].xr - cl[0].x;
+    // In a stemless chord with a second, one head is pushed sideways; align on the column holding most heads
+    // (on a tie, the right-hand column, where the displaced head is pushed to the left).
+    const cols: Head[][] = [];
+    for (const h of [...cl].sort((a, b) => a.x - b.x)) {
+      const col = cols.find((c) => Math.abs(c[0].x - h.x) < 0.3 * sp);
+      if (col) col.push(h);
+      else cols.push([h]);
+    }
+    const normal = cols.reduce((best, c) => (c.length >= best.length ? c : best));
+    const minX = Math.min(...normal.map((h) => h.x));
+    const w = normal[0].xr - normal[0].x;
     chords.push({
       id: nextId(),
       staff: cl[0].staff,
@@ -342,25 +351,40 @@ export function readSystemSymbols(page: PageLayout, sys: GrandSystem): SystemSym
   const dotGlyphs = glyphs.filter((g) => g.kind === "dot" && !repeatBars.some((b) => g.x > b.x0 - 2 * sp && g.x < b.x1 + 2 * sp));
   const dotOwners = new Map<Chord | Rest, MusicGlyph[]>();
   for (const d of dotGlyphs) {
+    // A dot sits on the row of a note in a space, or half a space above/below a note on a line.
+    // When voices collide their dots share one column, so the row decides the owner before distance does.
     let best: Chord | Rest | null = null;
-    let bestDx = Infinity;
+    let bestKey = Infinity;
     for (const c of [...chords, ...graceChords]) {
       const right = Math.max(...c.heads.map((h) => h.xr));
       const dx = d.x - right;
       if (dx <= 0 || dx > 2.4 * sp) continue;
-      const dy = Math.min(...c.heads.map((h) => Math.abs(h.y - d.y)));
-      if (dy > 0.8 * sp) continue;
-      if (dx < bestDx) {
+      // tiers: 0 = space note on the dot's row; 1 = line note with the dot on its usual side (above, or below
+      // for a down-stem voice); 1.5 = line note with the dot on the other side; 2.5 = merely close
+      let tier = 9;
+      for (const h of c.heads) {
+        const dy = d.y - h.y; // negative = dot above the head
+        if (h.pos % 2 !== 0 && Math.abs(dy) < 0.2 * sp) tier = Math.min(tier, 0);
+        else if (h.pos % 2 === 0 && Math.abs(Math.abs(dy) - 0.5 * sp) < 0.2 * sp) {
+          const usual = c.dir === "down" ? dy > 0 : dy < 0;
+          tier = Math.min(tier, usual ? 1 : 1.5);
+        } else if (Math.abs(dy) <= 0.8 * sp) tier = Math.min(tier, 2.5);
+      }
+      if (tier === 9) continue;
+      const key = tier * 1.2 * sp + dx;
+      if (key < bestKey) {
         best = c;
-        bestDx = dx;
+        bestKey = key;
       }
     }
     for (const r of rests) {
       const dx = d.x - (r.x + r.glyph.adv);
       if (dx <= -0.2 || dx > 1.6 * sp || Math.abs(d.y - r.y) > 2 * sp) continue;
-      if (dx < bestDx) {
+      // a dot right against a rest is that rest's
+      const key = (dx < 1.0 * sp ? 0.5 : 2) * 1.2 * sp + Math.max(0, dx);
+      if (key < bestKey) {
         best = r;
-        bestDx = dx;
+        bestKey = key;
       }
     }
     if (best) {
