@@ -31,8 +31,8 @@ export function sonataChar(byte: number): string {
   return byte < 0x80 ? String.fromCharCode(byte) : MAC_ROMAN_HIGH[byte - 0x80];
 }
 
-const MUSIC_FONT = /^(Opus|Helsinki|Inkpen2|Reprise|Norfolk|Pori|Tamburo|Maestro|Petrucci|Jazz|Engraver|Broadway|Doremi|Sonata|Bravura|Leland|Petaluma|Emmentaler|Gonville|MScore|MuseJazz|Finale|November|Sebastian|Leipzig|Musicnotes|Golden ?Age|Aruvarb)/i;
-const SMUFL_FONT = /^(Bravura|Leland|Petaluma|FinaleMaestro|Finale ?Maestro|FinaleBroadway|Finale ?Broadway|Sebastian|MuseJazz|Gonville|Emmentaler|Leipzig|Golden ?Age|Aruvarb)/i;
+const MUSIC_FONT = /^(Opus|Helsinki|Inkpen2|Reprise|Norfolk|Pori|Tamburo|Maestro|Petrucci|Jazz|Engraver|Broadway|Doremi|Sonata|Bravura|Leland|Petaluma|Emmentaler|Gonville|Gootville|MScore|MuseJazz|Finale|November|Sebastian|Leipzig|Musicnotes|Golden ?Age|Aruvarb|Ekmelos|Academico)/i;
+const SMUFL_FONT = /^(Bravura|Leland|Petaluma|FinaleMaestro|Finale ?Maestro|FinaleBroadway|Finale ?Broadway|FinaleJazz|FinaleAsh|Sebastian|MuseJazz|Gonville|Gootville|Emmentaler|MScore|Leipzig|Golden ?Age|Aruvarb|Ekmelos|Academico)/i;
 
 export function fontRole(name: string): FontRole {
   if (!MUSIC_FONT.test(name)) return "text";
@@ -41,8 +41,9 @@ export function fontRole(name: string): FontRole {
   return "music";
 }
 
+/** SMuFL fonts and their text companions (BravuraText, LelandText…) share the SMuFL code points. */
 export function isSmuflFont(name: string): boolean {
-  return SMUFL_FONT.test(name) && !/Text/i.test(name);
+  return SMUFL_FONT.test(name);
 }
 
 export type GlyphKind =
@@ -167,6 +168,10 @@ const DOREMI: Record<string, GlyphMeaning> = {
 /** SMuFL code points (https://w3c.github.io/smufl/latest/). */
 const SMUFL: Record<number, GlyphMeaning> = {
   0xe0a4: m("notehead", "black"),
+  // optional "large" noteheads that MuseScore uses with Bravura and Petaluma
+  0xf4be: m("notehead", "black"),
+  0xf4bd: m("notehead", "half"),
+  0xf4bc: m("notehead", "whole"),
   0xe0a3: m("notehead", "half"),
   0xe0a2: m("notehead", "whole"),
   0xe0a0: m("notehead", "breve"),
@@ -218,6 +223,10 @@ const SMUFL: Record<number, GlyphMeaning> = {
   0xe650: m("pedal", "down"),
   0xe655: m("pedal", "up"),
   0xe1d5: m("metronomeNote", "quarter"),
+  0xeca5: m("metronomeNote", "quarter"),
+  0xeca3: m("metronomeNote", "half"),
+  0xeca7: m("metronomeNote", "eighth"),
+  0xecb7: m("dot"),
   0xe1d3: m("metronomeNote", "half"),
   0xe1d7: m("metronomeNote", "eighth"),
 };
@@ -268,7 +277,7 @@ export function buildProfiles(glyphCodes: Map<string, number[]>): Map<string, Fo
     if (role === "text") {
       out.set(name, { name, role, scheme: docScheme, table: "none" });
     } else if (isSmuflFont(name)) {
-      out.set(name, { name, role, scheme: "smufl", table: "smufl" });
+      out.set(name, { name, role: role === "special" ? "music" : role, scheme: "smufl", table: "smufl" });
     } else {
       out.set(name, { name, role, scheme: docScheme, table: /Doremi/i.test(name) ? "doremi" : "sonata" });
     }

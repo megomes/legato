@@ -121,7 +121,7 @@ export function buildMeasures(layout: DocumentLayout): BuildResult {
           ...rests.filter((r) => !r.measureRest).map((r) => ({ kind: "rest" as const, ev: r })),
         ];
         const restStaves = new Set<StaffIndex>(measureRests);
-        const opts = { colTol: 0.3 * sp, mergeTol: 2.8 * sp, allowShort: false, restStaves };
+        const opts = { colTol: 0.3 * sp, mergeTol: 2.8 * sp, restTol: 0.6 * sp, allowShort: false, restStaves };
         let timing = solveMeasure(events, expected, opts);
         if ("reason" in timing) {
           const short = solveMeasure(events, expected, { ...opts, allowShort: true });

@@ -105,7 +105,7 @@ const fmt = (f: Frac) => (f.d === 1 ? `${f.n}` : `${f.n}/${f.d}`);
 export function solveMeasure(
   events: TimedEvent[],
   expected: Frac,
-  opts: { colTol: number; mergeTol: number; allowShort: boolean; restStaves: Set<StaffIndex> },
+  opts: { colTol: number; mergeTol: number; restTol: number; allowShort: boolean; restStaves: Set<StaffIndex> },
 ): MeasureTiming | TimingFailure {
   if (!events.length) return { onsets: new Map(), length: expected, merges: 0 };
   const sorted = [...events].sort((a, b) => anchorOf(a) - anchorOf(b));
@@ -133,7 +133,9 @@ export function solveMeasure(
       return Math.min(...up) - Math.max(...down) <= 2;
     };
     const opposed = columns[k].some((a) => columns[k + 1].some((b) => collide(a, b)));
-    if (opposed) mergeable.push(k);
+    // Rest glyphs are centred differently in some fonts: a lone rest may belong to the neighbouring column.
+    const restSnap = colX(columns[k + 1]) - colX(columns[k]) <= opts.restTol && (columns[k].every((e) => e.kind === "rest") || columns[k + 1].every((e) => e.kind === "rest"));
+    if (opposed || restSnap) mergeable.push(k);
   }
 
   let firstFailure = "Rhythm could not be resolved";
