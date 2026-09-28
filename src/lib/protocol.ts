@@ -1,8 +1,10 @@
-import type { ConversionResult, StageId } from "@/engine/convert";
+import type { ConversionResult, Preview, StageId } from "@/engine/convert";
 
-/** What the browser receives: the engine result with the MIDI as base64 and the stored job id. */
-export type ClientResult = Omit<ConversionResult, "midi" | "timeline"> & {
-  midiBase64?: string;
+export type RenderMode = "expressive" | "exact";
+
+/** What the browser receives: the engine result with each MIDI rendering as base64 and the stored job id. */
+export type ClientResult = Omit<ConversionResult, "midi" | "timeline" | "variants" | "preview"> & {
+  variants?: Record<RenderMode, { midiBase64: string; preview: Preview }>;
   jobId?: string;
   fileName: string;
 };

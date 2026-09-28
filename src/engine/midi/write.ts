@@ -11,7 +11,7 @@ import { PPQ } from "../util/frac";
 
 interface Ev {
   tick: number;
-  order: number; // at equal ticks: meta, note-off, note-on
+  order: number; // at equal ticks: meta, pedal up, note-off, note-on, pedal down
   bytes: number[];
 }
 
@@ -66,6 +66,8 @@ export function writeMidi(tl: Timeline, title: string): Uint8Array {
       { tick: 0, order: 1, bytes: [0xc0 | channel, 0] },
       { tick: 0, order: 1, bytes: [0xb0 | channel, 7, 100] },
     ];
+    // sustain pedal on both channels: each hand is its own channel, and the pedal lifts the dampers for both
+    for (const p of tl.pedal) evs.push({ tick: p.tick, order: p.down ? 4 : 1, bytes: [0xb0 | channel, 64, p.down ? 127 : 0] });
     for (const n of tl.notes) {
       if (n.hand !== h) continue;
       evs.push({ tick: n.start, order: 3, bytes: [0x90 | channel, n.midi, Math.min(127, Math.max(1, n.velocity))] });

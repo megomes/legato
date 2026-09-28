@@ -25,6 +25,9 @@ export interface NoteEvent {
   x: number;
   y: number;
   chordId: number;
+  /** printed articulation above/below the note */
+  articulation?: "staccato" | "accent" | "tenuto" | "marcato" | "staccatissimo";
+  fermata?: boolean;
 }
 
 export interface Direction {

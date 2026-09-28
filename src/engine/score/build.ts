@@ -4,7 +4,7 @@ import { solveMeasure, type TimedEvent } from "../recognize/rhythm";
 import { readOttavas } from "../recognize/ottava";
 import { readSystemSymbols } from "../recognize/symbols";
 import { applyTuplets } from "../recognize/tuplets";
-import type { Chord, ClefType, Frac, Head, Rest, StaffIndex, SystemSymbols, TupletMark } from "../recognize/types";
+import type { Chord, ClefType, Curve, Frac, Head, Rest, StaffIndex, SystemSymbols, TupletMark } from "../recognize/types";
 import { add, frac } from "../util/frac";
 import type { MeasureModel, NoteEvent } from "./types";
 
@@ -41,6 +41,8 @@ export interface BuildResult {
   documentProblems: string[];
   /** notes transposed by 8va/8vb/15ma lines */
   ottavaNotes: number;
+  /** curves read as ties (all other curves are slurs or decoration) */
+  tieCurves: Set<Curve>;
 }
 
 interface HeadInfo {
@@ -213,6 +215,7 @@ export function buildMeasures(layout: DocumentLayout): BuildResult {
 
   const globalOnset = (i: HeadInfo) => add(measureStart[i.measure.index], i.onset);
   const tiePrev = new Map<HeadInfo, HeadInfo>();
+  const tieCurves = new Set<Curve>();
   const tieNext = new Map<HeadInfo, HeadInfo>();
   let pendingOpen: HeadInfo[] = [];
   for (const rec of systems) {
@@ -241,12 +244,16 @@ export function buildMeasures(layout: DocumentLayout): BuildResult {
       if (best) {
         tieNext.set(best[0], best[1]);
         tiePrev.set(best[1], best[0]);
+        tieCurves.add(c);
         continue;
       }
       // tie leaving the system to the right
       if (c.right[0] > lastBar.x0 - 0.5 * sp && c.width < 12 * sp) {
         const L = lefts.filter((l) => !tieNext.has(l)).sort((a, b) => Math.abs(c.left[1] - a.head.y) - Math.abs(c.left[1] - b.head.y))[0];
-        if (L && Math.abs(c.left[1] - L.head.y) < 1.1 * sp) newOpen.push(L);
+        if (L && Math.abs(c.left[1] - L.head.y) < 1.1 * sp) {
+          newOpen.push(L);
+          tieCurves.add(c);
+        }
         continue;
       }
       // tie arriving from the previous system
@@ -255,6 +262,7 @@ export function buildMeasures(layout: DocumentLayout): BuildResult {
         if (!R) continue;
         const L = pendingOpen.find((o) => o.head.staff === R.head.staff && o.step === R.step && val(add(globalOnset(o), o.duration)) === val(globalOnset(R)));
         if (L) {
+          tieCurves.add(c);
           tieNext.set(L, R);
           tiePrev.set(R, L);
           pendingOpen = pendingOpen.filter((o) => o !== L);
@@ -391,7 +399,7 @@ export function buildMeasures(layout: DocumentLayout): BuildResult {
   }
 
   if (!measures.length) documentProblems.push("No grand-staff piano systems were found.");
-  return { measures, systems, notes, measureStart, documentProblems, ottavaNotes };
+  return { measures, systems, notes, measureStart, documentProblems, ottavaNotes, tieCurves };
 }
 
 function durationOf(c: Chord | Rest): Frac {

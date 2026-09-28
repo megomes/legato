@@ -4,6 +4,7 @@ import { writeMidi } from "./midi/write";
 import { extractDocument } from "./pdf/extract";
 import { buildTimeline, tickToSeconds, type Timeline } from "./perform/timeline";
 import { phrases, readDirections } from "./recognize/directions";
+import { readExpression } from "./recognize/expression";
 import { buildMeasures } from "./score/build";
 import { assignHands } from "./score/hands";
 import { unroll } from "./score/navigation";
@@ -78,6 +79,23 @@ export interface PreviewNote {
   v: number;
 }
 
+export interface Preview {
+  notes: PreviewNote[];
+  duration: number;
+  measureStarts: number[];
+  measureNumbers: number[];
+}
+
+export interface ExpressionSummary {
+  hairpins: number;
+  slurs: number;
+  accents: number;
+  staccatos: number;
+  fermatas: number;
+  dynamics: number;
+  pedal: "marked" | "adlib" | "none";
+}
+
 export interface ConversionResult {
   ok: boolean;
   engine: string;
@@ -89,7 +107,10 @@ export interface ConversionResult {
   navigation: string[];
   handNotes: string[];
   warnings: string[];
-  preview?: { notes: PreviewNote[]; duration: number; measureStarts: number[]; measureNumbers: number[] };
+  preview?: Preview;
+  /** "expressive" adds performance rules; "exact" plays only what is written */
+  variants?: Record<"expressive" | "exact", { midi: Uint8Array; preview: Preview }>;
+  expression?: ExpressionSummary;
   midi?: Uint8Array;
   timingsMs: Record<StageId, number>;
   timeline?: Timeline;
@@ -231,14 +252,43 @@ export async function convertPdf(data: Uint8Array, opts: ConvertOptions = {}): P
 
   // ---- 5. MIDI ---------------------------------------------------------------------------------
   await stage("midi");
-  const tl = buildTimeline(built.measures, nav.order, directions);
-  const midi = writeMidi(tl, title);
-  const secs = (tick: number) => tickToSeconds(tick, tl.tempos);
-  const previewNotes: PreviewNote[] = tl.notes.map((n) => {
-    const t = secs(n.start);
-    return { t: +t.toFixed(4), d: +(secs(n.end) - t).toFixed(4), m: n.midi, h: n.hand === "R" ? 0 : 1, v: n.velocity };
-  });
-  const duration = secs(tl.totalTicks);
+  const marks = readExpression(built, directions);
+  const measureStartQ = built.measureStart.map((f) => f.n / f.d);
+  const render = (expressive: boolean) => {
+    const tl = buildTimeline(built.measures, nav.order, directions, { expressive, marks, measureStart: measureStartQ });
+    const secs = (tick: number) => tickToSeconds(tick, tl.tempos);
+    // the browser sampler has no sustain pedal: let notes ring until the pedal lifts, as a piano would
+    const pedalUps = tl.pedal.filter((p) => !p.down).map((p) => p.tick);
+    const pedalDownAt = (tick: number) => {
+      let down = false;
+      for (const p of tl.pedal) {
+        if (p.tick > tick) break;
+        down = p.down;
+      }
+      return down;
+    };
+    const notes: PreviewNote[] = tl.notes.map((n) => {
+      const t = secs(n.start);
+      let end = n.end;
+      if (pedalDownAt(n.end)) end = Math.max(end, pedalUps.find((u) => u > n.end) ?? end);
+      return { t: +t.toFixed(4), d: +(secs(end) - t).toFixed(4), m: n.midi, h: n.hand === "R" ? 0 : 1, v: n.velocity };
+    });
+    return {
+      tl,
+      midi: writeMidi(tl, title),
+      preview: {
+        notes,
+        duration: secs(tl.totalTicks),
+        measureStarts: tl.measureTicks.map((m) => +secs(m.tick).toFixed(3)),
+        measureNumbers: tl.measureTicks.map((m) => m.measure + 1),
+      },
+    };
+  };
+  const expressive = render(true);
+  const exact = render(false);
+  const tl = expressive.tl;
+  const midi = expressive.midi;
+  const duration = expressive.preview.duration;
   lap("midi");
 
   const allNotes = built.measures.flatMap((m) => m.notes);
@@ -278,14 +328,14 @@ export async function convertPdf(data: Uint8Array, opts: ConvertOptions = {}): P
     navigation: nav.notes,
     handNotes: hands.notes.concat(unsupportedFonts.length ? [`Unsupported fonts ignored: ${unsupportedFonts.join(", ")}`] : []),
     warnings,
-    preview: {
-      notes: previewNotes,
-      duration,
-      measureStarts: tl.measureTicks.map((m) => +secs(m.tick).toFixed(3)),
-      measureNumbers: tl.measureTicks.map((m) => m.measure + 1),
+    preview: expressive.preview,
+    variants: {
+      expressive: { midi: expressive.midi, preview: expressive.preview },
+      exact: { midi: exact.midi, preview: exact.preview },
     },
+    expression: { ...marks.counts, pedal: marks.pedal, dynamics: marks.dynamics.length },
     midi,
     timingsMs: timings,
-    timeline: opts.includeTimeline ? tl : undefined,
+    timeline: opts.includeTimeline ? exact.tl : undefined,
   };
 }

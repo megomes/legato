@@ -33,9 +33,18 @@ export async function POST(request: Request) {
             await new Promise((r) => setTimeout(r, 0));
           },
         });
-        const { midi, timeline, ...rest } = result;
+        const { midi, timeline, variants, preview, ...rest } = result;
+        void midi;
         void timeline;
-        const client: ClientResult = { ...rest, fileName, midiBase64: midi ? toBase64(midi) : undefined };
+        void preview;
+        const client: ClientResult = {
+          ...rest,
+          fileName,
+          variants: variants && {
+            expressive: { midiBase64: toBase64(variants.expressive.midi), preview: variants.expressive.preview },
+            exact: { midiBase64: toBase64(variants.exact.midi), preview: variants.exact.preview },
+          },
+        };
         client.jobId = await record(clientId, fileName, data.length, result).catch((e) => {
           console.error("history write failed", e);
           return undefined;

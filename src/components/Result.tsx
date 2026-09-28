@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import type { ClientResult } from "@/lib/protocol";
+import type { Preview } from "@/engine/convert";
+import type { ClientResult, RenderMode } from "@/lib/protocol";
 import { downloadBytes, midiFileName } from "@/lib/client";
 import { Icon } from "./Icon";
 import { usePlayer } from "./usePlayer";
@@ -22,9 +23,11 @@ const pct = (v: number) => `${(v * 100).toLocaleString("pt-BR", { maximumFractio
 export function Result({ result, onReset }: { result: ClientResult; onReset: () => void }) {
   const s = result.stats!;
   const c = result.confidence!;
-  const p = result.preview!;
-  const player = usePlayer(p.notes, p.duration);
+  const [mode, setMode] = useState<RenderMode>("expressive");
+  const variant = result.variants![mode];
   const [open, setOpen] = useState(false);
+  const e = result.expression;
+  const fileName = mode === "exact" ? midiFileName(result).replace(/\.mid$/, " (exato).mid") : midiFileName(result);
   const handsLabel = c.hands >= 0.999 ? "Alta" : c.hands >= 0.95 ? pct(c.hands) : `${pct(c.hands)} · revisar`;
   const rhShare = s.rightHandNotes / Math.max(1, s.notes);
 
@@ -39,7 +42,7 @@ export function Result({ result, onReset }: { result: ClientResult; onReset: () 
           {result.composer && <p className={styles.composer}>{result.composer}</p>}
         </div>
         <div className={styles.actions}>
-          <button type="button" className={styles.primary} onClick={() => downloadBytes(result.midiBase64!, midiFileName(result))}>
+          <button type="button" className={styles.primary} onClick={() => downloadBytes(variant.midiBase64, fileName)}>
             <Icon name="download" size={19} stroke={2.2} /> Baixar MIDI
           </button>
           <button type="button" className={styles.secondary} onClick={onReset}>
@@ -116,44 +119,26 @@ export function Result({ result, onReset }: { result: ClientResult; onReset: () 
         </span>
       </div>
 
-      <div className={styles.player}>
-        <Waterfall
-          notes={p.notes}
-          duration={p.duration}
-          measureStarts={p.measureStarts}
-          measureNumbers={p.measureNumbers}
-          getTime={player.getTime}
-          playing={player.playing}
-          muted={player.muted}
-          onSeek={player.seek}
-        />
-        <div className={styles.transport}>
-          <button type="button" className={styles.play} onClick={player.toggle} aria-label={player.playing ? "Pausar" : "Tocar"} disabled={player.loading}>
-            {player.loading ? <span className={styles.spinner} /> : <Icon name={player.playing ? "pause" : "play"} size={22} stroke={2.6} />}
-          </button>
-          <span className={`${styles.clock} tabular`}>
-            {fmtTime(player.time)} <span>/ {fmtTime(p.duration)}</span>
-          </span>
-          {player.loading && <span className={styles.loading}>Carregando o piano…</span>}
-          <div className={styles.grow} />
-          <div className={styles.hands} role="group" aria-label="Mãos audíveis">
-            <button type="button" aria-pressed={!player.muted.R} className={`${styles.hand} ${styles.handR}`} onClick={() => player.toggleHand("R")}>
-              Direita
-            </button>
-            <button type="button" aria-pressed={!player.muted.L} className={`${styles.hand} ${styles.handL}`} onClick={() => player.toggleHand("L")}>
-              Esquerda
-            </button>
-          </div>
-          <div className={styles.speed} role="group" aria-label="Velocidade">
-            {[0.5, 0.75, 1].map((v) => (
-              <button key={v} type="button" aria-pressed={player.speed === v} onClick={() => player.setSpeed(v)}>
-                {v === 1 ? "1×" : `${v.toLocaleString("pt-BR")}×`}
-              </button>
-            ))}
-          </div>
+      <div className={styles.interp}>
+        <div className={styles.interpText}>
+          <p className={styles.interpTitle}>Interpretação</p>
+          <p className={styles.interpHint}>
+            {mode === "expressive"
+              ? "Melodia em destaque, frases com início e respiração, garfos, legato e staccato, pedal quando a partitura pede. As notas continuam no tempo exato da grade."
+              : "Só o que está escrito: dinâmicas, garfos, andamento e fermatas, com as notas na duração cheia. Bom para estudar com o metrônomo."}
+          </p>
         </div>
-        <p className={styles.tip}>Espaço toca e pausa. Arraste a cachoeira ou clique no mapa para navegar.</p>
+        <div className={styles.speed} role="group" aria-label="Interpretação">
+          <button type="button" aria-pressed={mode === "expressive"} onClick={() => setMode("expressive")}>
+            Expressiva
+          </button>
+          <button type="button" aria-pressed={mode === "exact"} onClick={() => setMode("exact")}>
+            Exata
+          </button>
+        </div>
       </div>
+
+      <PlayerPanel key={mode} preview={variant.preview} />
 
       <div className={styles.details}>
         <button type="button" className={styles.detailsToggle} onClick={() => setOpen((o) => !o)} aria-expanded={open}>
@@ -183,8 +168,14 @@ export function Result({ result, onReset }: { result: ClientResult; onReset: () 
               <dd>
                 {noteName(s.lowestNote)} – {noteName(s.highestNote)}
               </dd>
+              <dt>Expressão lida</dt>
+              <dd>
+                {e
+                  ? `${e.dynamics} dinâmicas · ${e.hairpins} garfos · ${e.slurs} ligaduras de expressão · ${e.accents} acentos · ${e.staccatos} staccatos · ${e.fermatas} fermatas · pedal: ${e.pedal === "none" ? "não indicado" : e.pedal === "adlib" ? "ad lib (automático na versão expressiva)" : "marcado"}`
+                  : "—"}
+              </dd>
               <dt>Faixas MIDI</dt>
-              <dd>Right Hand (canal 1) · Left Hand (canal 2) · PPQ 960</dd>
+              <dd>Right Hand (canal 1) · Left Hand (canal 2) · PPQ 960{e && e.pedal !== "none" ? " · pedal CC64 na versão expressiva" : ""}</dd>
               <dt>Tempo por etapa</dt>
               <dd className="tabular">
                 {Object.values(result.timingsMs).reduce((a, b) => a + b, 0)} ms (
@@ -228,5 +219,49 @@ export function Result({ result, onReset }: { result: ClientResult; onReset: () 
         )}
       </div>
     </section>
+  );
+}
+
+function PlayerPanel({ preview }: { preview: Preview }) {
+  const player = usePlayer(preview.notes, preview.duration);
+  return (
+      <div className={styles.player}>
+        <Waterfall
+          notes={preview.notes}
+          duration={preview.duration}
+          measureStarts={preview.measureStarts}
+          measureNumbers={preview.measureNumbers}
+          getTime={player.getTime}
+          playing={player.playing}
+          muted={player.muted}
+          onSeek={player.seek}
+        />
+        <div className={styles.transport}>
+          <button type="button" className={styles.play} onClick={player.toggle} aria-label={player.playing ? "Pausar" : "Tocar"} disabled={player.loading}>
+            {player.loading ? <span className={styles.spinner} /> : <Icon name={player.playing ? "pause" : "play"} size={22} stroke={2.6} />}
+          </button>
+          <span className={`${styles.clock} tabular`}>
+            {fmtTime(player.time)} <span>/ {fmtTime(preview.duration)}</span>
+          </span>
+          {player.loading && <span className={styles.loading}>Carregando o piano…</span>}
+          <div className={styles.grow} />
+          <div className={styles.hands} role="group" aria-label="Mãos audíveis">
+            <button type="button" aria-pressed={!player.muted.R} className={`${styles.hand} ${styles.handR}`} onClick={() => player.toggleHand("R")}>
+              Direita
+            </button>
+            <button type="button" aria-pressed={!player.muted.L} className={`${styles.hand} ${styles.handL}`} onClick={() => player.toggleHand("L")}>
+              Esquerda
+            </button>
+          </div>
+          <div className={styles.speed} role="group" aria-label="Velocidade">
+            {[0.5, 0.75, 1].map((v) => (
+              <button key={v} type="button" aria-pressed={player.speed === v} onClick={() => player.setSpeed(v)}>
+                {v === 1 ? "1×" : `${v.toLocaleString("pt-BR")}×`}
+              </button>
+            ))}
+          </div>
+        </div>
+        <p className={styles.tip}>Espaço toca e pausa. Arraste a cachoeira ou clique no mapa para navegar.</p>
+      </div>
   );
 }
