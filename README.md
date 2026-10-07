@@ -141,6 +141,10 @@ wrongly.
 | Database | Neon Postgres, optional                       |
 | Deploy   | Vercel                                        |
 
+## License
+
+[MIT](LICENSE)
+
 <br>
 
 <div align="center">
